@@ -1,0 +1,96 @@
+version: '3.8'
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.8.0
+    container_name: elasticsearch
+    restart: unless-stopped
+    ports:
+      - "9200:9200"     
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    networks: 
+      - logging-network
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.8.0
+    build: filebeat
+    container_name: filebeat
+    environment:
+      - ELASTICSEARCH_HOSTS=elasticsearch:9200    
+    labels:
+      co.elastic.logs/enabled: "false"
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+      - type: bind
+        source: /var/lib/docker
+        target: /var/lib/docker
+    networks:
+      - logging-network
+    
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.8.0
+    container_name: kibana
+    environment:
+      - 'ELASTICSEARCH_HOSTS=["http://elasticsearch:9200"]'
+      - "SERVER_NAME=localhost"
+      - "XPACK_MONITORING_ENABLED=false"
+    ports:
+      - 5601:5601
+    depends_on:
+      - elasticsearch
+    networks:
+      - logging-network
+ 
+  prometheus:
+    image: prom/prometheus:v2.44.0
+    container_name: prometheus
+    ports:
+      - 9090:9090
+    volumes:
+      - ./configs/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - logging-network
+
+  grafana:
+    image: grafana/grafana:9.5.2
+    container_name: grafana   
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./configs/grafana:/etc/grafana/provisioning
+    depends_on:
+      - prometheus    
+    networks:
+      - logging-network
+
+  service-techs:
+    build:
+      context: ./srvs-techs
+      dockerfile: Dockerfile
+    container_name: service-techs
+    ports:
+      - "8080:8080"
+    networks:
+      - logging-network
+    
+  service-reqs:
+    build:
+      context: ./srvs-reqs
+      dockerfile: Dockerfile
+    container_name: service-reqs
+    ports:
+      - "8081:8081"
+    depends_on:
+      - service-techs
+    networks:
+      - logging-network
+
+networks: 
+  logging-network:
+    driver: bridge
